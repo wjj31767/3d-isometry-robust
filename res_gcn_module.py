@@ -20,9 +20,9 @@ def group(xyz, points, k, dilation=1, use_xyz=False):
 
 
 def pool(xyz, points, k, npoint):
-    new_xyz = index_points(xyz, farthest_point_sample(npoint, xyz))
+    new_xyz = index_points(xyz, farthest_point_sample(xyz, npoint))
     _, idx = knn_point(k, xyz, new_xyz)
-    new_points = torch.max(index_points(points, idx), dim=2)
+    new_points = torch.max(index_points(points, idx), dim=2).values
 
     return new_xyz, new_points
 
@@ -35,11 +35,12 @@ class pointcnn(nn.Module):
         self.activation = activation
         self.conv1 = nn.Conv2d(3,n_cout,kernel_size=(1,1))
         self.conv2 = nn.Conv2d(n_cout,n_cout,kernel_size=(1,1))
-        self.bn = nn.BatchNorm1d(n_cout)
+        self.bn = nn.BatchNorm2d(n_cout)
     def forward(self,xyz):
         # grouped_points: knn points coordinates (normalized: minus centual points)
+        xyz = xyz.permute(0,2,1)
         _, grouped_points, _ = group(xyz, None, self.k)
-
+        grouped_points = grouped_points.permute(0,3,2,1)
         # print('n_blocks: ', n_blocks)
         # print('is_training: ', is_training)
 
@@ -49,7 +50,7 @@ class pointcnn(nn.Module):
             else:
                 grouped_points = self.conv2(grouped_points)
             if idx == self.n_blocks - 1:
-                return torch.max(grouped_points, 2)
+                return torch.max(grouped_points, 2).values
             else:
                 grouped_points = self.activation(self.bn(grouped_points))
 
@@ -60,6 +61,7 @@ class res_gcn_d(nn.Module):
         self.n_blocks = n_blocks
         self.indices = indices
         self.convs = nn.ModuleList()
+        self.n_cout = n_cout
         for i in range(n_blocks):
             self.convs.append(nn.Conv2d(n_cout,n_cout,kernel_size=(1,1)))
             self.convs.append(nn.Conv2d(n_cout,n_cout,kernel_size=(1,1)))
@@ -68,16 +70,22 @@ class res_gcn_d(nn.Module):
         for idx in range(self.n_blocks):
             shortcut = points
             # Center Features
-            points = torch.nn.functional.leaky_relu(points)
+            points = points.permute(0, 2, 1)
+            xyz = xyz.permute(0, 2, 1)
+            points = F.leaky_relu(points)
             # Neighbor Features
             if idx == 0 and self.indices is None:
+
                 _, grouped_points, indices = group(xyz, points, self.k)
             else:
                 grouped_points = index_points(points, self.indices)
             # Center Conv
+            points = points.permute(0, 2, 1)
+            xyz = xyz.permute(0, 2, 1)
             center_points = torch.unsqueeze(points, dim=2)
-            points = self.convs[2*idx](center_points, self.n_cout)
+            points = self.convs[2*idx](center_points)
             # Neighbor Conv
+            grouped_points = grouped_points.permute(0,3,2,1)
             grouped_points_nn = self.convs[2*idx+1](grouped_points)
             # CNN
             points = torch.mean(torch.cat([points, grouped_points_nn], dim=2), dim=2) + shortcut
@@ -89,10 +97,10 @@ class res_gcn_d_last(nn.Module):
         super(res_gcn_d_last, self).__init__()
         self.conv = nn.Conv2d(in_channel,n_cout,kernel_size=(1,1))
     def forward(self,points):
-        points = torch.nn.functional.leaky_relu(points)
+        points = F.leaky_relu(points)
         center_points = torch.unsqueeze(points, dim=2)
         points = torch.squeeze(self.conv(center_points), dim=2)
-
+        points = points.permute(0,2,1)
         return points
 
 if __name__ == '__main__':

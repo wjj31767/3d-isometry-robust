@@ -49,6 +49,8 @@ def index_points(points, idx): # equal to group_point
     Return:
         new_points:, indexed points data, [B, S, C]
     """
+    if idx is None:
+        return torch.unsqueeze(points,dim=2)
     device = points.device
     B = points.shape[0]
     view_shape = list(idx.shape)

@@ -7,11 +7,11 @@ import torch
 import numpy as np
 import torch.nn.functional as F
 class Discriminator(nn.Module):
-    def __init__(self,activation,batch):
+    def __init__(self,activation,num_point):
         super(Discriminator,self).__init__()
         self.activation = activation
         self.pointcnn = pointcnn(8,64,2,activation=self.activation)
-        self.block_num = int(math.log2(batch / 64) / 2)
+        self.block_num = int(math.log2(num_point / 64) / 2)
         self.res_gcn_d_list = nn.ModuleList()
         for i in range(self.block_num):
             self.res_gcn_d_list.append(res_gcn_d(8,64,4))
@@ -20,10 +20,13 @@ class Discriminator(nn.Module):
         points = self.pointcnn(xyz)
 
         for i in range(self.block_num):
-            xyz, points = pool(xyz, points, 8, points.get_shape()[1].value // 4)
+            points = points.permute(0,2,1)
+            xyz = xyz.permute(0,2,1)
+            xyz, points = pool(xyz, points, 8, points.shape[1] // 4)
+            points = points.permute(0, 2, 1)
+            xyz = xyz.permute(0, 2, 1)
             points = self.res_gcn_d_list[i](xyz, points)
         points = self.res_gcn_d_last(points)
-
 
         return points
 if __name__== '__main__':
