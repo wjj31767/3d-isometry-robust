@@ -122,8 +122,7 @@ class PointNetfeatadv(nn.Module):
         pointfeat = x
         x = F.relu(self.bn2(self.conv2(x)))
         x = self.bn3(self.conv3(x))
-        x = torch.max(x, 2, keepdim=True)[0]
-        x_indice = torch.argmax(x, 2)
+        x,x_indice = torch.max(x, 2, keepdim=True)
         x = x.view(-1, 1024)
         if self.global_feat:
             return x, x_indice, trans, trans_feat
@@ -166,6 +165,7 @@ class PointNetClsAdv(nn.Module):
 
     def forward(self, x):
         x, x_indice, trans, trans_feat = self.feat(x)
+        # print(x_indice)
         x = F.relu(self.bn1(self.fc1(x)))
         x = F.relu(self.bn2(self.dropout(self.fc2(x))))
         x = self.fc3(x)
@@ -234,10 +234,12 @@ if __name__ == '__main__':
     out, _, _ = pointfeat(sim_data)
     print('point feat', out.size())
 
-    cls = PointNetCls(k = 5)
-    out, _, _ = cls(sim_data)
-    print('class', out.size())
+    cls = PointNetClsAdv(k = 5)
+    out, indices, _ = cls(sim_data)
+    print('class', out.size(),'indices',indices.size())
 
-    seg = PointNetDenseCls(k = 3)
-    out, _, _ = seg(sim_data)
-    print('seg', out.size())
+    # seg = PointNetDenseCls(k = 3)
+    # out, _, _ = seg(sim_data)
+    # print('seg', out.size())
+
+
