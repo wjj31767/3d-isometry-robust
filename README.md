@@ -1,7 +1,10 @@
 # PointCloud Saliency Maps (pytorch)
-For paper "PointCloud Saliency Maps" (To appear in ICCV 2019 oral presentation, 187 out of 4303)
 
-large copy from (some command changed)
+This is pytorch implementation for paper "PointCloud Saliency Maps" (To appear in ICCV 2019 oral presentation, 187 out of 4303)
+this is the link of tensorflow version
+[tianzheng4](https://github.com/tianzheng4)/**[PointCloud-Saliency-Maps](https://github.com/tianzheng4/PointCloud-Saliency-Maps)**
+
+large copy from [3d-isometry-robust]/**(https://github.com/skywalker6174/3d-isometry-robust)**
 
 # Pytorch Implementation of PointNet and PointNet++ 
 
