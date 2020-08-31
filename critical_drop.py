@@ -1,26 +1,19 @@
 from __future__ import print_function
+
 import argparse
 import os
-import csv
-import numpy as np
 import random
-import torch
+
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
 from data.data_class import ModelNet40, ShapeNetPart
 from data.transforms_3d import *
-
-from models.pointnet import PointNetCls, feature_transform_regularizer,get_loss_v2,PointNetClsAdv
-from models.pointnet2 import PointNet2ClsMsg
 from models.dgcnn import DGCNN
-from models.pointcnn import PointCNNCls
-
-from utils import progress_bar, adjust_lr_steep, log_row
-
-
+from models.pointnet import PointNetCls, get_loss_v2, PointNetClsAdv
+from models.pointnet2 import PointNet2ClsMsg
+from utils import progress_bar
 
 
 def cal_loss(pred, gold, smoothing=True):
@@ -49,7 +42,8 @@ def drop_points( points, target,modeladv,criterion,numdrop,numstep):
     for i in range(numstep):
         points_adv = torch.tensor(points_adv, requires_grad=True, dtype=torch.float32).to(device)
         pred, drop_indice, trans_feat = modeladv.forward(points_adv)
-        points_adv = points_adv.detach().numpy()
+        # print(drop_indice)
+        points_adv = points_adv.cpu().detach().numpy()
         tmp = np.zeros((points_adv.shape[0], 3, points_adv.shape[2] - numdrop), dtype=float)
 
         for j in range(points_adv.shape[0]):
@@ -68,6 +62,7 @@ def drop_points( points, target,modeladv,criterion,numdrop,numstep):
 
         points_adv = tmp.copy()
     points_adv = torch.tensor(points_adv, dtype=torch.float32)
+    # print(points_adv.shape)
     return points_adv
 
 if __name__ == '__main__':
@@ -78,7 +73,7 @@ if __name__ == '__main__':
     parser.add_argument('--model', type=str, default='pointnet', help='choose model type')
     parser.add_argument('--data', type=str, default='modelnet40', help='choose data set')
     parser.add_argument('--seed', type=int, default=0, help='manual random seed')
-    parser.add_argument('--batch_size', type=int, default=32, help='input batch size')
+    parser.add_argument('--batch_size', type=int, default=4, help='input batch size')
     parser.add_argument('--num_points', type=int, default=1024, help='input batch size')
     parser.add_argument('--epochs', type=int, default=200, help='number of epochs to train for')
     parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer for training')
@@ -126,7 +121,7 @@ if __name__ == '__main__':
         model = PointNetCls(num_classes, args.feature_transform)  
         model = model.to(device)
         modeladv = PointNetClsAdv(num_classes, args.feature_transform)
-        modeladv = model.to(device)
+        modeladv = modeladv.to(device)
     elif args.model == 'pointnet2':
         model = PointNet2ClsMsg(num_classes)
         model = model.to(device)
@@ -135,19 +130,6 @@ if __name__ == '__main__':
         model = DGCNN(num_classes)
         model = model.to(device) 
         model = nn.DataParallel(model)
-    elif args.model == 'pointcnn':
-        model = PointCNNCls(num_classes)
-        model = model.to(device) 
-        model = nn.DataParallel(model)
-    elif args.model == 'rscnn':  
-        from models.rscnn import RSCNN ## use torch 0.4.1.post2
-        import models.rscnn_utils.pointnet2_utils as pointnet2_utils
-        import models.rscnn_utils.pytorch_utils as pt_utils
-        model = RSCNN(num_classes)
-        model = model.to(device) 
-        model = nn.DataParallel(model)
-
-
 
     print('=====> Loading from checkpoint...')
     checkpoint = torch.load('checkpoints/%s.pth' % args.resume)
@@ -156,20 +138,10 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     print("Random Seed: ", args.seed)
 
-
-
-    if args.optimizer == 'SGD':
-        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
-    elif args.optimizer == 'Adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
-
     model.load_state_dict(checkpoint['model_state_dict'])
-    # modeladv.load_state_dict(checkpoint['model_state_dict'])
+    modeladv.load_state_dict(checkpoint['model_state_dict'])
 
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     loss = get_loss_v2()
-    START_EPOCH = checkpoint['epoch'] + 1
-    acc_list = checkpoint['acc_list']
     print('Successfully resumed!')
     
 
@@ -181,12 +153,12 @@ if __name__ == '__main__':
 
     test_tfs = normalize()
     if args.data == 'modelnet40':
-        test_data = ModelNet40(partition='test', num_points=2048, transforms=test_tfs)
+        test_data = ModelNet40(partition='test', num_points=args.num_points, transforms=test_tfs)
     elif args.data == 'shapenetpart':
         test_data = ShapeNetPart(partition='test', num_points=args.num_points, transforms=test_tfs)
 
 
-    test_loader = DataLoader(test_data, num_workers=8,
+    test_loader = DataLoader(test_data, num_workers=4,
                              batch_size=args.batch_size, shuffle=True, drop_last=False)
     print('======> Successfully loaded!')
 
@@ -214,12 +186,9 @@ if __name__ == '__main__':
     for j, data in enumerate(test_loader, 0):
         points, label = data
         points, label = points.to(device), label.to(device)[:, 0]
-        model.eval()
-        if args.model == 'rscnn':
-            fps_idx = pointnet2_utils.furthest_point_sample(points, args.num_points)  # (B, npoint)
-            points = pointnet2_utils.gather_operation(points.transpose(1, 2).contiguous(), fps_idx).transpose(1,2).contiguous()  # (B, N, 3)
+
         points = points.transpose(2, 1)  # to be shape batch_size*3*N
-        pred, _ = model(points)
+        pred,_ = model(points)
         pred_choice = pred.data.max(1)[1]
 
         for cat in np.unique(label.cpu()):

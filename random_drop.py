@@ -1,26 +1,19 @@
 from __future__ import print_function
+
 import argparse
 import os
-import csv
-import numpy as np
 import random
-import torch
+
 import torch.nn as nn
-import torch.optim as optim
 import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 
 from data.data_class import ModelNet40, ShapeNetPart
 from data.transforms_3d import *
-
-from models.pointnet import PointNetCls, feature_transform_regularizer,get_loss_v2
-from models.pointnet2 import PointNet2ClsMsg
 from models.dgcnn import DGCNN
-from models.pointcnn import PointCNNCls
-
-from utils import progress_bar, adjust_lr_steep, log_row
-
-
+from models.pointnet import PointNetCls, get_loss_v2
+from models.pointnet2 import PointNet2ClsMsg
+from utils import progress_bar
 
 
 def cal_loss(pred, gold, smoothing=True):
@@ -118,19 +111,6 @@ if __name__ == '__main__':
         model = DGCNN(num_classes)
         model = model.to(device) 
         model = nn.DataParallel(model)
-    elif args.model == 'pointcnn':
-        model = PointCNNCls(num_classes)
-        model = model.to(device) 
-        model = nn.DataParallel(model)
-    elif args.model == 'rscnn':  
-        from models.rscnn import RSCNN ## use torch 0.4.1.post2
-        import models.rscnn_utils.pointnet2_utils as pointnet2_utils
-        import models.rscnn_utils.pytorch_utils as pt_utils
-        model = RSCNN(num_classes)
-        model = model.to(device) 
-        model = nn.DataParallel(model)
-
-
 
     print('=====> Loading from checkpoint...')
     checkpoint = torch.load('checkpoints/%s.pth' % args.resume)
@@ -139,21 +119,10 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     print("Random Seed: ", args.seed)
 
-
-
-    if args.optimizer == 'SGD':
-        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
-    elif args.optimizer == 'Adam':
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(0.9, 0.999))
-
     model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     loss = get_loss_v2()
-    START_EPOCH = checkpoint['epoch'] + 1
-    acc_list = checkpoint['acc_list']
     print('Successfully resumed!')
     
-
     ########################################
     ## Load data
     ########################################
@@ -196,10 +165,6 @@ if __name__ == '__main__':
         points, label = data
         points, label = points.to(device), label.to(device)[:, 0]
 
-        if args.model == 'rscnn':
-            fps_idx = pointnet2_utils.furthest_point_sample(points, args.num_points)  # (B, npoint)
-            points = pointnet2_utils.gather_operation(points.transpose(1, 2).contiguous(), fps_idx).transpose(1,
-                                                                                                              2).contiguous()  # (B, N, 3)
         points = points.transpose(2, 1)  # to be shape batch_size*3*N
         cur_batch_data_adv = drop_points(points, label, model, loss, num_drop, num_steps)
         cur_batch_data_adv = cur_batch_data_adv.cuda()
@@ -230,8 +195,4 @@ if __name__ == '__main__':
     for i, name in enumerate(SHAPE_NAMES):
         print('%10s:\t%0.3f' % (name, class_acc[:,2][i]))
         print('%10s:\t%0.3f' % (name, class_acc_adv[:,2][i]))
-
-
-
-
 
