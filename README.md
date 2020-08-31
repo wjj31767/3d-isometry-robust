@@ -12,11 +12,10 @@ large copy from [3d-isometry-robust]/**(https://github.com/skywalker6174/3d-isom
 
 ## Classification
 ### Data Preparation
-Download alignment **ModelNet** [here](https://shapenet.cs.stanford.edu/media/modelnet40_normal_resampled.zip) and save in `data/modelnet40_normal_resampled/`.
+[ModelNet40] automatically downloaded
 
-```
-# batch_size=192 if use 12GB GPU
-```
+[ShapeNet] /fxia22/pointnet.pytorch (follow the guidence for downloading)
+The default path of data is '/data'.
 
 ### Run
 ```
@@ -29,6 +28,7 @@ python3 test_cls.py --log_dir pointnet_cls
 ## Adversarial attack
 
 ```
+python random_drop.py
 python saliency.py
 python critical_drop.py
 ```
